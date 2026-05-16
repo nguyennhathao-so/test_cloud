@@ -90,37 +90,102 @@ This application is configured to work without connecting a database for the pag
 
 ## Deployment
 
-This repository is set up for deployment on Azure App Service (w/MySQL flexible server) using the configuration files in the `infra` folder.
+Repo này có **2 cách deploy** lên Azure: bằng Azure Portal (giao diện web) hoặc dùng Azure Developer CLI (terminal). Bạn có thể chọn cách phù hợp nhất với mình.
 
-To deploy your own instance, follow these steps:
+---
 
-1. Sign up for a [free Azure account](https://azure.microsoft.com/free/)
+### ✅ Cách 1: Dùng Azure Portal (không cần terminal)
 
-2. Install the [Azure Dev CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd).
+**Bước 1 — Fork repo về GitHub của bạn**
+Vào **github.com/john0isaac/flask-webapp-mysql-db** → nhấn nút **Fork** (góc trên phải) → **Create fork**
 
-3. Initialize a new `azd` environment:
+**Bước 2 — Tạo MySQL Database trên Azure Portal**
+1. Vào **portal.azure.com**
+2. Tìm **"Azure Database for MySQL"** → **Create** → **Flexible Server**
+3. Điền:
+   - Server name: `flask-mysql-server`
+   - Region: `Southeast Asia` (Hoặc khu vực gần bạn nhất)
+   - MySQL version: `8.0`
+   - Admin username / password: tự đặt, **nhớ lưu lại**
+4. Tab **Networking** → bật **Allow public access** → **Add current client IP** (để có thể import data từ máy tính của bạn).
+5. **Review + Create** → **Create**
 
-    ```shell
-    azd init -t john0isaac/flask-webapp-mysql-db
-    ```
+Sau khi tạo xong, vào server → **Databases** → **Add** → đặt tên `flask_db`
 
-    It will prompt you to provide a name (like "flask-app") that will later be used in the name of the deployed resources.
+**Bước 3 — Tạo App Service**
+1. Tìm **"App Services"** → **Create**
+2. Điền:
+   - Name: `flask-artist-app` *(thành domain của bạn)*
+   - Runtime stack: **Python 3.11** (hoặc bản Python tương ứng)
+   - OS: **Linux**
+   - Region: **Southeast Asia**
+   - Plan: **F1 Free** (miễn phí để học)
+3. **Review + Create** → **Create**
 
-4. Provision and deploy all the resources:
+**Bước 4 — Kết nối GitHub và deploy tự động**
+1. Vào App Service vừa tạo → menu trái **Deployment Center**
+2. Source: chọn **GitHub**
+3. Đăng nhập GitHub → chọn repo bạn vừa fork
+4. Branch: **main**
+5. Nhấn **Save** → Azure tự động build và deploy! ✅
 
-    ```shell
-    azd up
-    ```
+**Bước 5 — Cấu hình biến môi trường (thông tin DB)**
+Vào App Service → **Configuration** → **Application settings** → **New application setting**, thêm lần lượt:
 
-    It will prompt you to login, pick a subscription, and provide a location (like "eastus"). Then it will provision the resources in your account and deploy the latest code. If you get an error with deployment, changing the location (like to "centralus") can help, as there may be availability constraints for some of the resources.
+| Name | Value |
+|---|---|
+| `DEPLOYMENT_LOCATION` | `azure` |
+| `AZURE_MYSQL_HOST` | `flask-mysql-server.mysql.database.azure.com` |
+| `AZURE_MYSQL_USER` | username đã tạo ở bước 2 |
+| `AZURE_MYSQL_PASSWORD` | password đã tạo ở bước 2 |
+| `AZURE_MYSQL_NAME` | `flask_db` |
 
-5. When azd has finished deploying, you'll see an endpoint URI in the command output. Visit that URI to browse the app! 🎉
+Nhấn **Save** → App tự động restart.
 
-If you make any changes to the app code, you can just run this command to redeploy it:
+*(Lưu ý: Tên biến môi trường phải chính xác như trên vì code trong file `environment/azure_production.py` đọc các biến này).*
 
-```shell
-azd deploy
+**Bước 6 — Import database**
+1. Mở file **`mock_up_data.sql`** trong repo. Nếu chưa sửa, hãy đổi dòng `GRANT ALL PRIVILEGES ON DATABASE fyyur TO john;` thành `GRANT ALL PRIVILEGES ON flask_db.* TO 'username_cua_ban';` (hoặc có thể xóa dòng đó đi nếu user admin đã có full quyền).
+2. Dùng terminal trên máy tính hoặc Azure Cloud Shell để import dữ liệu:
+
+```bash
+mysql -h flask-mysql-server.mysql.database.azure.com \
+      -u username_cua_ban -p flask_db < mock_up_data.sql
 ```
+
+**Kết quả:** Truy cập `https://flask-artist-app.azurewebsites.net` là xong! 🎉
+
+---
+
+### ✅ Cách 2: Dùng Azure Developer CLI (nhanh hơn, chỉ 3 lệnh)
+
+Nếu bạn muốn dùng terminal, đây là cách **siêu nhanh** đã được cấu hình sẵn trong thư mục `infra/`.
+
+1. **Cài Azure Developer CLI trước**
+   - Windows: `winget install microsoft.azd`
+   - Mac: `brew install azd`
+
+2. **Khởi tạo project**
+   ```bash
+   azd init -t john0isaac/flask-webapp-mysql-db
+   ```
+
+3. **Deploy lên Azure**
+   ```bash
+   azd up
+   ```
+   Lệnh này tự động tạo App Service, MySQL, Key Vault và deploy code luôn!
+
+---
+
+### So sánh 2 cách
+
+| | Portal (Cách 1) | Azure CLI (Cách 2) |
+|---|---|---|
+| Cần terminal | ❌ Không | ✅ Có |
+| Số bước | Nhiều hơn | 3 lệnh |
+| Học được nhiều hơn | ✅ Hiểu từng phần | ❌ Tự động hết |
+| Phù hợp | Người mới học | Muốn nhanh |
 
 ## Security
 
@@ -128,8 +193,8 @@ It is important to secure the databases in web applications to prevent unwanted 
 This infrastructure uses the following mechanisms to secure the MySQL database:
 
 * Azure Firewall: The database is accessible only from other Azure IPs, not from public IPs. (Note that includes other customers using Azure).
-* Admin Username: Randomly generated and stored in Key Vault.
-* Admin Password: Randomly generated and stored in Key Vault.
+* Admin Username: Randomly generated and stored in Key Vault (nếu dùng Cách 2).
+* Admin Password: Randomly generated and stored in Key Vault (nếu dùng Cách 2).
 * MySQL Version: Latest available on Azure, version 8.0, which includes security improvements.
 
 ⚠️ For even more security, consider using an Azure Virtual Network to connect the Web App to the Database.
@@ -144,5 +209,4 @@ You can try the [Azure pricing calculator](https://azure.microsoft.com/pricing/c
 * MySQL Flexible Server: Burstable Tier with 1 CPU core, 20GB storage. Pricing is hourly. [Pricing](https://azure.microsoft.com/pricing/details/mysql/)
 * Key Vault: Standard tier with 2 secrets. Vaults are offered in two service tiers—standard and premium. [Pricing](https://azure.microsoft.com/pricing/details/key-vault/)
 
-⚠️ To avoid unnecessary costs, remember to take down your app if it's no longer in use,
-either by deleting the resource group in the Portal or running `azd down`.
+⚠️ To avoid unnecessary costs, remember to take down your app if it's no longer in use, either by deleting the resource group in the Portal or running `azd down`.
